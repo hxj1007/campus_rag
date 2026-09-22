@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>校园资料智能问答助手</title>
+    <style>
+        /* ===== CSS：页面样式（不懂可以先照抄） ===== */
+        body {
+            font-family: "微软雅黑", Arial, sans-serif;
+            max-width: 700px;
+            margin: 50px auto;
+            padding: 0 15px;
+        }
+        #chat-box {
+            height: 400px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            padding: 15px;
+            overflow-y: auto;      /* 内容多了可以滚动 */
+            margin-bottom: 15px;
+            background: #fafafa;
+        }
+        .question {                /* 用户的问题：靠右、蓝色 */
+            text-align: right;
+            color: #1a73e8;
+            margin: 8px 0;
+        }
+        .answer {                  /* 助手的回答：靠左、黑色 */
+            text-align: left;
+            margin: 8px 0;
+        }
+        #input-area { display: flex; gap: 10px; }
+        #question-input { flex: 1; padding: 10px; font-size: 15px; }
+        button { padding: 10px 20px; font-size: 15px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h2>校园资料智能问答助手</h2>
+
+    <!-- 聊天记录区（空的，靠下面的 JavaScript 往里加内容） -->
+    <div id="chat-box"></div>
+
+    <!-- 输入区：输入框 + 发送按钮 -->
+    <div id="input-area">
+        <input type="text" id="question-input" placeholder="请输入你的问题，如：校园卡怎么充值？">
+        <button onclick="sendQuestion()">发送</button>
+    </div>
+
+    <script>
+        // ===== JavaScript：页面逻辑 =====
+        // 后端接口地址（FastAPI 默认跑在 8000 端口）
+        const API_URL = "http://127.0.0.1:8000/chat";
+
+        // 发送问题（核心函数）
+        async function sendQuestion() {
+            // 1. 拿到输入框里的文字
+            const input = document.getElementById("question-input");
+            const question = input.value.trim();
+
+            // 2. 没输入就不发
+            if (question === "") {
+                alert("请输入问题");
+                return;
+            }
+
+            // 3. 先把用户的问题显示到聊天区
+            addMessage(question, "question");
+
+            // 4. 清空输入框
+            input.value = "";
+
+            // 5. 发请求给后端（fetch 相当于 Python 的 requests.post）
+            try {
+                const response = await fetch(API_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ question: question })  // 把问题转成 JSON
+                });
+
+                // 6. 把后端返回的 JSON 转成对象，取出答案
+                const data = await response.json();
+
+                // 7. 显示答案
+                addMessage(data.answer, "answer");
+            } catch (error) {
+                addMessage("出错了，请检查后端是否启动：" + error, "answer");
+            }
+        }
+
+        // 往聊天区加一条消息的辅助函数
+        function addMessage(text, type) {
+            const chatBox = document.getElementById("chat-box");
+            const div = document.createElement("div");   // 新建一个 <div>
+            div.className = type;                        // 设为 question 或 answer
+            div.textContent = text;                      // 填上文字
+            chatBox.appendChild(div);                    // 加到聊天区
+            chatBox.scrollTop = chatBox.scrollHeight;    // 自动滚到底部
+        }
+
+        // 按回车键也能发送
+        document.getElementById("question-input").addEventListener("keydown", function (e) {
+            if (e.key === "Enter") sendQuestion();
+        });
+    </script>
+</body>
+</html>
