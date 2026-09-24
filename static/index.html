@@ -10,6 +10,14 @@
             max-width: 700px;
             margin: 50px auto;
             padding: 0 15px;
+            color: #222;
+            background: #f5f7fb;
+        }
+        h2 { margin-bottom: 6px; }
+        .desc {
+            margin: 0 0 16px;
+            color: #666;
+            font-size: 14px;
         }
         #chat-box {
             height: 400px;
@@ -18,33 +26,99 @@
             padding: 15px;
             overflow-y: auto;      /* 内容多了可以滚动 */
             margin-bottom: 15px;
-            background: #fafafa;
+            background: #fff;
+        }
+        .message {
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+            padding: 8px 10px;
+            border-radius: 8px;
         }
         .question {                /* 用户的问题：靠右、蓝色 */
             text-align: right;
             color: #1a73e8;
             margin: 8px 0;
+            background: #eef5ff;
         }
         .answer {                  /* 助手的回答：靠左、黑色 */
             text-align: left;
             margin: 8px 0;
+            background: #f7f7f7;
         }
         #input-area { display: flex; gap: 10px; }
-        #question-input { flex: 1; padding: 10px; font-size: 15px; }
-        button { padding: 10px 20px; font-size: 15px; cursor: pointer; }
+        #question-input {
+            flex: 1;
+            padding: 10px;
+            font-size: 15px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 15px;
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            background: #1a73e8;
+            color: #fff;
+        }
+        .small-button {
+            padding: 7px 12px;
+            font-size: 14px;
+            background: #e8eef8;
+            color: #24528a;
+        }
+        #quick-area {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        #tool-area {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        button:disabled { cursor: not-allowed; opacity: 0.6; }
+        #status {
+            min-height: 22px;
+            margin: 8px 0;
+            color: #666;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
     <h2>校园资料智能问答助手</h2>
+    <p class="desc">可以查询校园卡、选课、图书馆、宿舍报修、学费缴纳等信息。</p>
 
-    <!-- 聊天记录区（空的，靠下面的 JavaScript 往里加内容） -->
-    <div id="chat-box"></div>
+    <!-- 常用问题区：点击后自动填入并发送 -->
+    <div id="quick-area">
+        <button class="small-button" onclick="askQuickQuestion('校园卡丢了怎么挂失和补办？')">校园卡挂失</button>
+        <button class="small-button" onclick="askQuickQuestion('选课系统怎么登录？')">选课登录</button>
+        <button class="small-button" onclick="askQuickQuestion('图书馆能借几本书？')">图书馆借书</button>
+        <button class="small-button" onclick="askQuickQuestion('宿舍水龙头坏了怎么报修？')">宿舍报修</button>
+        <button class="small-button" onclick="askQuickQuestion('学费和住宿费怎么交？')">学费缴纳</button>
+    </div>
+
+    <div id="tool-area">
+        <span id="count-text">已输入 0 个字</span>
+        <button class="small-button" onclick="clearChat()">清空对话</button>
+    </div>
+
+    <!-- 聊天记录区（靠下面的 JavaScript 往里加内容） -->
+    <div id="chat-box">
+        <div class="message answer">你好！我是校园资料智能问答助手，请输入校园卡、选课、图书馆、宿舍报修或学费缴纳等问题。</div>
+    </div>
 
     <!-- 输入区：输入框 + 发送按钮 -->
     <div id="input-area">
         <input type="text" id="question-input" placeholder="请输入你的问题，如：校园卡怎么充值？">
-        <button onclick="sendQuestion()">发送</button>
+        <button id="send-button" onclick="sendQuestion()">发送</button>
     </div>
+    <div id="status"></div>
 
     <script>
         // ===== JavaScript：页面逻辑 =====
@@ -55,11 +129,14 @@
         async function sendQuestion() {
             // 1. 拿到输入框里的文字
             const input = document.getElementById("question-input");
+            const sendButton = document.getElementById("send-button");
+            const status = document.getElementById("status");
             const question = input.value.trim();
 
             // 2. 没输入就不发
             if (question === "") {
-                alert("请输入问题");
+                status.textContent = "请输入问题后再发送。";
+                input.focus();
                 return;
             }
 
@@ -68,6 +145,10 @@
 
             // 4. 清空输入框
             input.value = "";
+            updateCount();
+            input.disabled = true;
+            sendButton.disabled = true;
+            status.textContent = "正在查询，请稍候……";
 
             // 5. 发请求给后端（fetch 相当于 Python 的 requests.post）
             try {
@@ -77,13 +158,29 @@
                     body: JSON.stringify({ question: question })  // 把问题转成 JSON
                 });
 
-                // 6. 把后端返回的 JSON 转成对象，取出答案
+                // 6. HTTP 状态不成功时，主动抛出错误
+                if (!response.ok) {
+                    throw new Error("服务器返回错误（HTTP " + response.status + "）");
+                }
+
+                // 7. 把后端返回的 JSON 转成对象，取出答案
                 const data = await response.json();
 
-                // 7. 显示答案
-                addMessage(data.answer, "answer");
+                // 8. 显示答案；如果后端没有返回 answer，给出明确提示
+                if (data.answer) {
+                    addMessage(data.answer, "answer");
+                    status.textContent = "";
+                } else {
+                    addMessage("后端没有返回有效答案，请检查接口返回格式。", "answer");
+                    status.textContent = "本次查询未得到有效回答。";
+                }
             } catch (error) {
-                addMessage("出错了，请检查后端是否启动：" + error, "answer");
+                addMessage("暂时无法连接后端，请确认服务已启动。错误信息：" + error.message, "answer");
+                status.textContent = "请求失败，请检查 http://127.0.0.1:8000 是否已启动。";
+            } finally {
+                input.disabled = false;
+                sendButton.disabled = false;
+                input.focus();
             }
         }
 
@@ -91,16 +188,42 @@
         function addMessage(text, type) {
             const chatBox = document.getElementById("chat-box");
             const div = document.createElement("div");   // 新建一个 <div>
-            div.className = type;                        // 设为 question 或 answer
+            div.className = "message " + type;           // 设为 question 或 answer
             div.textContent = text;                      // 填上文字
             chatBox.appendChild(div);                    // 加到聊天区
             chatBox.scrollTop = chatBox.scrollHeight;    // 自动滚到底部
+        }
+
+        // 点击常用问题后，自动填入并发送
+        function askQuickQuestion(question) {
+            const input = document.getElementById("question-input");
+            input.value = question;
+            updateCount();
+            sendQuestion();
+        }
+
+        // 清空聊天记录
+        function clearChat() {
+            const chatBox = document.getElementById("chat-box");
+            chatBox.innerHTML = "";
+            addMessage("对话已清空，你可以继续提问。", "answer");
+            document.getElementById("status").textContent = "";
+        }
+
+        // 更新输入字数提示
+        function updateCount() {
+            const input = document.getElementById("question-input");
+            const countText = document.getElementById("count-text");
+            countText.textContent = "已输入 " + input.value.length + " 个字";
         }
 
         // 按回车键也能发送
         document.getElementById("question-input").addEventListener("keydown", function (e) {
             if (e.key === "Enter") sendQuestion();
         });
+
+        // 输入时实时显示字数
+        document.getElementById("question-input").addEventListener("input", updateCount);
     </script>
 </body>
 </html>
