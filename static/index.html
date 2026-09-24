@@ -125,6 +125,10 @@
         // 后端接口地址（FastAPI 默认跑在 8000 端口）
         const API_URL = "http://127.0.0.1:8000/chat";
 
+        // 会话ID：用来区分不同对话，让后端能记住"多轮上下文"（追问时用得上）。
+        // 页面打开时随机生成一个；点"清空对话"时重新生成，相当于开启一段新对话。
+        let sessionId = "session_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
+
         // 发送问题（核心函数）
         async function sendQuestion() {
             // 1. 拿到输入框里的文字
@@ -155,7 +159,7 @@
                 const response = await fetch(API_URL, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ question: question })  // 把问题转成 JSON
+                    body: JSON.stringify({ question: question, session_id: sessionId })  // 带上问题 + 会话ID
                 });
 
                 // 6. HTTP 状态不成功时，主动抛出错误
@@ -165,6 +169,11 @@
 
                 // 7. 把后端返回的 JSON 转成对象，取出答案
                 const data = await response.json();
+
+                // 后端会回传会话ID（目前是原样返回），有就更新，保持和服务器一致
+                if (data.session_id) {
+                    sessionId = data.session_id;
+                }
 
                 // 8. 显示答案；如果后端没有返回 answer，给出明确提示
                 if (data.answer) {
@@ -208,6 +217,8 @@
             chatBox.innerHTML = "";
             addMessage("对话已清空，你可以继续提问。", "answer");
             document.getElementById("status").textContent = "";
+            // 清空后重新生成会话ID，开启一段全新的多轮对话
+            sessionId = "session_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
         }
 
         // 更新输入字数提示
