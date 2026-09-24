@@ -6,9 +6,8 @@
 # 1. 导包
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
 import uvicorn
 
 # 导入 RAG 检索（组长负责的链路）
@@ -17,6 +16,8 @@ from app.rag.retriever import retrieve
 from app.llm.generator import generate
 # 导入多轮对话记忆
 from app.llm.memory import ConversationMemory
+# 导入请求 / 响应数据模型（谭存林负责）
+from app.models import ChatRequest, ChatResponse
 
 # 2. 创建 FastAPI 服务实例
 app = FastAPI(
@@ -43,16 +44,15 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 memory = ConversationMemory(max_turns=5)
 
 
-# 5. 请求模型：前端发来的数据格式
-class ChatRequest(BaseModel):
-    question: str          # 用户的问题
-    session_id: str = ""   # 会话标识，用于区分不同用户/不同对话（不传也能跑）
-
-
-# 6. 响应模型：返回给前端的数据格式
-class ChatResponse(BaseModel):
-    answer: str            # 助手的回答
-    session_id: str = ""   # 回传会话标识，前端下次请求带上它
+# 5. 全局异常处理（老师 Part 4：异常处理）
+#    后端出错时，不让用户看到一坨英文堆栈，而是返回友好的中文提示。
+@app.exception_handler(Exception)
+def global_exception_handler(request, exc):
+    """兜底：捕获没有被接口里 try/except 处理的其他异常"""
+    return JSONResponse(
+        status_code=500,
+        content={"answer": "服务器内部出错了，请稍后重试。", "session_id": ""},
+    )
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -83,20 +83,29 @@ def chat(req: ChatRequest):
     # 1. 取出会话标识（前端没传就是空字符串，相当于所有请求共用一个会话）
     session_id = req.session_id
 
-    # 2. 从向量库检索和问题最相关的资料片段（返回字符串列表）
-    context = retrieve(req.question, k=4)
+    # 2. 用 try/except 把"检索 + 生成"包起来，出错时返回友好提示，
+    #    而不是让接口直接崩溃（例如：密钥没配、向量库没建、大模型调用失败等）
+    try:
+        # 2.1 从向量库检索和问题最相关的资料片段（返回字符串列表）
+        context = retrieve(req.question, k=4)
 
-    # 3. 取出该会话之前的历史对话，交给大模型参考
-    history = memory.get_history(session_id)
+        # 2.2 取出该会话之前的历史对话，交给大模型参考
+        history = memory.get_history(session_id)
 
-    # 4. 调用大模型生成回答（传入：资料 + 问题 + 历史）
-    answer = generate(context, req.question, history)
+        # 2.3 调用大模型生成回答（传入：资料 + 问题 + 历史）
+        answer = generate(context, req.question, history)
+    except Exception as e:
+        # 出错时返回友好提示，并带上简要原因，方便排查
+        return ChatResponse(
+            answer=f"很抱歉，暂时无法回答你的问题，请稍后再试。原因：{e}",
+            session_id=session_id,
+        )
 
-    # 5. 把本轮问答存入记忆，供后续追问使用
+    # 3. 把本轮问答存入记忆，供后续追问使用
     memory.add_user(session_id, req.question)
     memory.add_assistant(session_id, answer)
 
-    # 6. 返回回答和会话标识
+    # 4. 返回回答和会话标识
     return ChatResponse(answer=answer, session_id=session_id)
 
 
