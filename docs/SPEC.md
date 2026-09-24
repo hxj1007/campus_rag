@@ -224,61 +224,11 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], ...)
 
 ---
 
-## 五、技术难点与待统一事项
 
-### 难点 1：模型路由不一致（⚠️ 需统一）
 
-**问题**：`app/llm/llm.py` 的 `get_llm()` 用的是**硅基流动**接口（`SILICONFLOW_API_KEY` + `base_url=硅基流动` + 模型 `deepseek-ai/DeepSeek-V3`），而 `.env.example` 和 README 规划的是**DeepSeek 官方接口**（`DEEPSEEK_API_KEY` + `base_url=https://api.deepseek.com` + 模型 `deepseek-chat`）。
+## 五、启动与部署方式
 
-**影响**：大模型走哪家接口、填哪个密钥，目前两边不一致，可能导致 `get_llm()` 报"找不到密钥"或模型名称不对。
-
-**建议**：统一为 DeepSeek 官方接口（和 .env.example、README 一致）：
-
-```python
-def get_llm():
-    return ChatOpenAI(
-        model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
-        api_key=os.getenv("DEEPSEEK_API_KEY"),
-        base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
-        temperature=0.7,
-        timeout=60,
-    )
-```
-
-### 难点 2：`/chat` 接口还是占位代码（⚠️ 需接入）
-
-**问题**：`main.py` 的 `/chat` 目前返回占位字符串，尚未调用 RAG 检索和大模型。
-
-**目标逻辑**（接入 `app/rag.retriever` + `app/llm.generator`）：
-
-```python
-@app.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest):
-    context = retrieve(req.question)              # 1. 检索
-    answer = generate(context, req.question)      # 2. 生成
-    return ChatResponse(answer=answer)
-```
-
-### 难点 3：多轮记忆的 `session_id` 未打通（⚠️ 需补）
-
-**问题**：`memory.py` 和 `generator.py` 都支持 `session_id`/`history`，但前端 `index.html` 只发 `{question}`，`/chat` 也没传历史，导致多轮记忆目前**无法生效**。
-
-**目标**：前端生成/持有 `session_id`，随请求发送；后端用 `ConversationMemory` 按该 id 读写历史。
-
-### 难点 4：重复的 embedding 代码
-
-`app/rag/embedding.py` 和 `app/llm/embeddings.py` 各有一份 `get_embeddings()`，功能几乎一样。建议保留一处（如 `app/rag/embedding.py`），另一处改为引用，避免两处改不一致。
-
-### 难点 5：Chroma 持久化与重建
-
-- 建库后 `chroma_db/` 已存在则 `build_index()` 会跳过；改了资料需**先删除 chroma_db/ 再重建**。
-- 向量维度由 embedding 模型决定，换模型需重建库，否则检索会报维度不匹配。
-
----
-
-## 六、启动与部署方式
-
-### 6.1 本地运行
+### 5.1 本地运行
 
 ```bash
 # 1. 安装依赖
@@ -296,7 +246,7 @@ python main.py        # 访问 http://127.0.0.1:8000
 #    浏览器打开 static/index.html
 ```
 
-### 6.2 部署方式（本课程阶段）
+### 5.2 部署方式（本课程阶段）
 
 - **本阶段**：本地单机运行，后端 + 前端在同一台电脑。
 - **后续可选**：用 Uvicorn 部署到云服务器（`uvicorn main:app --host 0.0.0.0 --port 8000`），前端通过 Nginx 托管，非本期重点。
