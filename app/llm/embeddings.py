@@ -1,35 +1,8 @@
-# app/llm/embeddings.py
-import warnings
-warnings.filterwarnings("ignore", category=UserWarning, module="langchain_core")
-warnings.filterwarnings("ignore", category=UserWarning, module="langchain")
-warnings.filterwarnings("ignore", category=DeprecationWarning)
+# -*- coding: utf-8 -*-
+"""embedding 实例（已合并到 rag 层，这里只引用，避免两处重复定义）。
 
-import os
-from pathlib import Path
-from dotenv import load_dotenv
-
-ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
-load_dotenv(ENV_PATH)
-
-from langchain_openai import OpenAIEmbeddings
-
-
-def get_embeddings():
-    """
-    创建硅基流动 embedding 模型实例（OpenAI 兼容接口）
-    模型：BAAI/bge-large-zh-v1.5
-    :return: OpenAIEmbeddings 实例
-    """
-    api_key = os.getenv("SILICONFLOW_API_KEY")
-    base_url = os.getenv("SILICONFLOW_BASE_URL")
-    model = os.getenv("EMBEDDING_MODEL", "BAAI/bge-large-zh-v1.5")
-
-    if not api_key:
-        raise ValueError(f"未找到 SILICONFLOW_API_KEY，请检查 {ENV_PATH}")
-
-    return OpenAIEmbeddings(
-        model=model,
-        api_key=api_key,
-        base_url=base_url,
-        check_embedding_ctx_length=False,
-    )
+原来的 get_embeddings() 在 app/rag/embedding.py 和 app/llm/embeddings.py 各有一份，
+功能一样，容易改漏。现在统一只保留 app/rag/embedding.py 这一处，
+这里直接引用它，老代码里写 from app.llm.embeddings import get_embeddings 也能用。
+"""
+from app.rag.embedding import get_embeddings
